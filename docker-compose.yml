@@ -1,0 +1,59 @@
+# ==============================================================================
+# PADUA - Docker Compose
+# ==============================================================================
+# Uso:
+#   docker compose up --build        # Construir y ejecutar
+#   docker compose up                # Ejecutar (imagen ya construida)
+#   docker compose logs -f           # Ver logs en tiempo real
+# ==============================================================================
+
+version: "3.9"
+
+services:
+  padua:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: padua-pod-automation
+    image: padua-pod:latest
+
+    # Volúmenes: Persistencia de datos en el host
+    volumes:
+      # Input: Excel con guías (lectura/escritura)
+      - ${HOST_DATA_DIR:-./data}/WEBSITE:/app/WEBSITE
+      # Output: PDFs e imágenes descargadas
+      - ${HOST_DATA_DIR:-./data}/DESCARGA:/app/DESCARGA
+      # Logs: Persistir logs de ejecución
+      - ${HOST_DATA_DIR:-./data}/logs:/app/logs
+
+    # Recursos (ajustar según la VM de Azure)
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+        reservations:
+          memory: 2G
+          cpus: "1.0"
+
+    # Shared memory aumentado (Chrome lo necesita)
+    shm_size: "2gb"
+
+    # Variables de entorno
+    environment:
+      - DISPLAY=:99
+      - DISPLAY_WIDTH=1920
+      - DISPLAY_HEIGHT=1080
+      - DISPLAY_DEPTH=24
+      - TZ=America/Bogota
+      - PYTHONUNBUFFERED=1
+      - PYTHONIOENCODING=utf-8
+      # Flag para que el script Python sepa que está en Docker
+      - RUNNING_IN_DOCKER=true
+
+    # No reiniciar automáticamente (es un job, no un servicio)
+    restart: "no"
+
+    # Seguridad
+    security_opt:
+      - no-new-privileges:true

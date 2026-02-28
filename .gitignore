@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos de descarga y temporales
+DESCARGA/
+*.pdf
+*.zip
+*.tmp
+
+# Archivos con credenciales (NO SUBIR)
+*.env
+.env
+credentials.json
+config.json
+
+# Excel con datos sensibles
+WEBSITE/GUIAS.xlsx
+
+# Logs
+*.log
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Selenium
+chromedriver.exe
+geckodriver.exe
+*.crx

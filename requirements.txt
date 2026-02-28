@@ -1,0 +1,8 @@
+selenium>=4.15.0
+openpyxl>=3.1.2
+pyautogui>=0.9.54
+chromedriver-autoinstaller>=0.6.3
+PyVirtualDisplay>=3.0
+Pillow>=10.0.0
+python-xlib>=0.33
+requests>=2.31.0

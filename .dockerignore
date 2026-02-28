@@ -1,0 +1,29 @@
+# Ignorar datos y salidas (se montan como volúmenes)
+WEBSITE/
+DESCARGA/
+data/
+logs/
+
+# Archivos de desarrollo
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+.vscode/
+.cursor/
+
+# Documentación (no necesaria en el contenedor)
+README*.md
+*.md
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+*.log
+
+# Docker compose (no necesario dentro del contenedor)
+docker-compose.yml
+deploy_and_run.sh
+.last_build
+.dockerignore
