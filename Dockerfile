@@ -137,11 +137,14 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
     && pip cache purge || true
 
 # ------------------------------------------------------------------------------
-# 6. Copiar código fuente
+# 6. Copiar código fuente y documentación
 # ------------------------------------------------------------------------------
 COPY test_selenium_browser.py .
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
+
+RUN mkdir -p /app/docs
+COPY MANUAL_USUARIO.md MANUAL_TECNICO.md /app/docs/
 
 # ------------------------------------------------------------------------------
 # 7. Crear directorios de datos (serán montados como volúmenes)

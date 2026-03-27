@@ -6,6 +6,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 import os
 import sys
 import time
@@ -1287,7 +1288,16 @@ def main():
                     ruta_excel = os.path.join(WEBSITE_DIR, "GUIAS.xlsx")
                     ruta_excel_backup = os.path.join(WEBSITE_DIR, "GUIAS_RESULTADO.xlsx")
                     print("\nLeyendo archivo de guías desde Excel...")
-                    wb_guias = openpyxl.load_workbook(ruta_excel)
+                    try:
+                        wb_guias = openpyxl.load_workbook(ruta_excel)
+                    except PermissionError:
+                        ruta_excel_alt = os.path.join(WEBSITE_DIR, "GUIAS_PRUEBA.xlsx")
+                        if os.path.exists(ruta_excel_alt):
+                            print(f"   [WARNING] GUIAS.xlsx bloqueado, usando GUIAS_PRUEBA.xlsx")
+                            ruta_excel = ruta_excel_alt
+                            wb_guias = openpyxl.load_workbook(ruta_excel)
+                        else:
+                            raise
                     ws_guias = wb_guias.active
                     lista_guias = []
                     for row_excel in range(2, ws_guias.max_row + 1):
@@ -1313,8 +1323,16 @@ def main():
                             # Buscar el campo 'nenvio' usando un método completamente diferente
                             print("\n[PASO 3] Buscando el campo 'Envío' (nenvio) para escribir la guía...")
                     
-                            # Esperar a que cargue el formulario (optimizado)
-                            tiempo_espera = 0.5 if idx_guia > 0 else 1.5  # Reducido significativamente
+                            # CRÍTICO para búsquedas masivas: asegurar contexto correcto (default_content)
+                            # En Docker, tras re-navegación el driver puede quedar en frame "menu"
+                            # y el JS solo ve ese frame, no el frame "contenido" donde está nenvio
+                            driver.switch_to.default_content()
+                            if len(driver.window_handles) > 0:
+                                driver.switch_to.window(driver.window_handles[0])
+                            time.sleep(0.3)
+                    
+                            # Esperar a que cargue el formulario (más tiempo en Docker para guías 2+)
+                            tiempo_espera = 2.0 if (idx_guia > 0 and is_docker()) else (0.5 if idx_guia > 0 else 1.5)
                             print(f"   Esperando {tiempo_espera}s a que cargue el formulario...")
                             time.sleep(tiempo_espera)
                     
@@ -1419,9 +1437,29 @@ def main():
                                 # Si JavaScript ya escribió la guía, saltar directamente al PASO 4 sin buscar con Selenium
                                 print("[OK] Guía escrita exitosamente. Continuando al siguiente paso...")
                             else:
-                                # Mostrar todos los inputs encontrados para debug
-                                if resultado_js and 'inputs' in resultado_js:
-                                    inputs_encontrados = resultado_js.get('inputs', [])
+                                # FALLBACK para búsquedas masivas (Docker): intentar frame "contenido" explícitamente
+                                if idx_guia > 0 and not campo_envio:
+                                    driver.switch_to.default_content()
+                                    for frame_intentar in ["contenido", "content", "principal", "body", 0, 1, 2]:
+                                        try:
+                                            driver.switch_to.default_content()
+                                            driver.switch_to.frame(frame_intentar)
+                                            time.sleep(0.5)
+                                            elem_nenvio = driver.find_element(By.NAME, "nenvio")
+                                            if elem_nenvio and elem_nenvio.is_displayed():
+                                                elem_nenvio.clear()
+                                                elem_nenvio.send_keys(guia_prueba)
+                                                print(f"[OK] Campo nenvio encontrado en frame '{frame_intentar}' (fallback búsqueda masiva)")
+                                                campo_envio = True
+                                                break
+                                        except Exception:
+                                            driver.switch_to.default_content()
+                                            continue
+                                    driver.switch_to.default_content()
+                                if not campo_envio:
+                                    # Mostrar todos los inputs encontrados para debug
+                                    if resultado_js and 'inputs' in resultado_js:
+                                        inputs_encontrados = resultado_js.get('inputs', [])
                                     print(f"   [WARNING] Campo 'nenvio' no encontrado. Inputs disponibles ({len(inputs_encontrados)}):")
                                     for idx, inp in enumerate(inputs_encontrados[:20]):  # Mostrar los primeros 20
                                         print(f"      Input #{idx+1}: name='{inp.get('name', '')}', id='{inp.get('id', '')}', maxlength='{inp.get('maxlength', '')}', contexto='{inp.get('contexto', '')}'")
@@ -3274,7 +3312,8 @@ def main():
                                                 time.sleep(1)  # Esperar a que aparezca autocomplete
                                                 campo_menu.send_keys(Keys.ENTER)
                                                 print("   [OK] '7.8' escrito y Enter enviado en el menú")
-                                                time.sleep(4)  # Esperar a que cargue el formulario
+                                                # En Docker/headless el formulario tarda más en cargar
+                                                time.sleep(6 if is_docker() else 4)
                                                 
                                                 # 3. Verificar que el formulario se cargó (buscar campo nenvio)
                                                 driver.switch_to.default_content()
@@ -3299,10 +3338,114 @@ def main():
                                                 if formulario_cargado:
                                                     print("   [OK] Formulario 7.8 cargado exitosamente (campo nenvio detectado)")
                                                 else:
-                                                    # Tal vez Enter no seleccionó el resultado. Buscar y clickear manualmente.
-                                                    print("   [WARNING] Formulario no detectado. Buscando resultado '7.8' para clickear...")
-                                                    driver.switch_to.default_content()
-                                                    resultado_click = driver.execute_script("""
+                                                    # FALLBACK 1: Intentar driver.back() para volver al formulario (Docker/local)
+                                                    if is_docker():
+                                                        try:
+                                                            driver.switch_to.default_content()
+                                                            driver.back()
+                                                            time.sleep(3)
+                                                            formulario_cargado = driver.execute_script("""
+                                                                function b(d,n){if(n>10)return false;try{
+                                                                    var c=d.querySelector('input[name="nenvio"]');if(c&&c.offsetParent)return true;
+                                                                    var f=d.querySelectorAll('frame,iframe');for(var i=0;i<f.length;i++){try{if(b(f[i].contentDocument,n+1))return true}catch(e){}}
+                                                                }catch(e){}return false} return b(document,0);
+                                                            """)
+                                                            if formulario_cargado:
+                                                                print("   [OK] Formulario recuperado con driver.back()")
+                                                        except Exception as e_back:
+                                                            print(f"   [WARNING] driver.back() falló: {e_back}")
+                                                if not formulario_cargado:
+                                                    # FALLBACK 2 Docker: recargar página principal y volver a 7.8
+                                                    if is_docker():
+                                                        print("   [Docker] Recargando página principal y re-navegando a 7.8...")
+                                                        try:
+                                                            driver.get(url_principal_app)
+                                                            time.sleep(5)
+                                                            driver.switch_to.default_content()
+                                                            driver.switch_to.frame("menu")
+                                                            campo_menu2 = WebDriverWait(driver, 5).until(
+                                                                EC.presence_of_element_located((By.NAME, "funcionalidad_codigo"))
+                                                            )
+                                                            campo_menu2.clear()
+                                                            time.sleep(0.5)
+                                                            campo_menu2.send_keys("7.8")
+                                                            time.sleep(3)
+                                                            # En Docker: 1) ActionChains ARROW_DOWN+ENTER para autocomplete
+                                                            try:
+                                                                ActionChains(driver).send_keys(Keys.ARROW_DOWN).send_keys(Keys.ENTER).perform()
+                                                                print("   [OK] ActionChains ARROW_DOWN+ENTER enviado")
+                                                                time.sleep(6)
+                                                            except Exception as e_ac:
+                                                                print(f"   [WARNING] ActionChains falló: {e_ac}, intentando Enter...")
+                                                                campo_menu2.send_keys(Keys.ENTER)
+                                                                time.sleep(6)
+                                                            # 2) Si formulario no cargó, intentar clic directo en resultado 7.8
+                                                            driver.switch_to.default_content()
+                                                            formulario_ahora = driver.execute_script("""
+                                                                function b(d,n){if(n>10)return false;try{
+                                                                    var c=d.querySelector('input[name="nenvio"]');
+                                                                    if(c&&c.offsetParent)return true;
+                                                                    var f=d.querySelectorAll('frame,iframe');
+                                                                    for(var i=0;i<f.length;i++){try{if(b(f[i].contentDocument,n+1))return true}catch(e){}}
+                                                                }catch(e){}return false}
+                                                                return b(document,0);
+                                                            """)
+                                                            if not formulario_ahora:
+                                                                try:
+                                                                    driver.switch_to.frame("menu")
+                                                                    WebDriverWait(driver, 8).until(
+                                                                        EC.presence_of_element_located((By.XPATH, "//*[contains(text(),'7.8') and contains(text(),'Hist')]"))
+                                                                    )
+                                                                    elems = driver.find_elements(By.XPATH, "//*[contains(text(),'7.8') and contains(text(),'Hist')]")
+                                                                    for elem in elems:
+                                                                        try:
+                                                                            texto = (elem.text or "").strip()
+                                                                            if "7.8" in texto and "Hist" in texto:
+                                                                                try:
+                                                                                    padre = elem.find_element(By.XPATH, "./ancestor::a[1]")
+                                                                                    driver.execute_script("arguments[0].scrollIntoView(true);", padre)
+                                                                                    time.sleep(0.5)
+                                                                                    driver.execute_script("arguments[0].click();", padre)
+                                                                                    print("   [OK] Clic directo en '7.8 Consulta a Histórico' (Docker)")
+                                                                                    time.sleep(6)
+                                                                                    break
+                                                                                except:
+                                                                                    driver.execute_script("arguments[0].click();", elem)
+                                                                                    time.sleep(6)
+                                                                                    break
+                                                                        except:
+                                                                            pass
+                                                                except Exception as e_click:
+                                                                    print(f"   [WARNING] Clic directo falló: {e_click}")
+                                                            driver.switch_to.default_content()
+                                                            # Re-verificar formulario tras recarga
+                                                            formulario_cargado = driver.execute_script("""
+                                                                function buscarNenvio(doc, nivel) {
+                                                                    if (nivel > 10) return false;
+                                                                    try {
+                                                                        var campo = doc.querySelector('input[name="nenvio"]');
+                                                                        if (campo && campo.offsetParent !== null) return true;
+                                                                        var frames = doc.querySelectorAll('frame, iframe');
+                                                                        for (var i = 0; i < frames.length; i++) {
+                                                                            try {
+                                                                                if (buscarNenvio(frames[i].contentDocument, nivel + 1)) return true;
+                                                                            } catch(e) {}
+                                                                        }
+                                                                    } catch(e) {}
+                                                                    return false;
+                                                                }
+                                                                return buscarNenvio(document, 0);
+                                                            """)
+                                                            if formulario_cargado:
+                                                                print("   [OK] Formulario cargado tras recarga Docker")
+                                                        except Exception as e_rel:
+                                                            print(f"   [WARNING] Error recargando: {e_rel}")
+                                                    else:
+                                                        # Tal vez Enter no seleccionó el resultado. Buscar y clickear manualmente.
+                                                        print("   [WARNING] Formulario no detectado. Buscando resultado '7.8' para clickear...")
+                                                    if not formulario_cargado:
+                                                        driver.switch_to.default_content()
+                                                        resultado_click = driver.execute_script("""
                                                         function buscarYClick78(doc, nivel) {
                                                             if (nivel > 10) return false;
                                                             try {
